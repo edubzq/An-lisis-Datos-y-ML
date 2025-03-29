@@ -1,0 +1,1283 @@
+---
+title: "Análisis de Datos y Machine Learning"
+date: "`r Sys.Date()`"
+output: html_document
+author: "Nombre del grupo de prácticas: GES 
+
+
+Guillermo Carmona Martínez (1.1, portavoz), Silvia Fuentes García (1.1), Eduardo Blázquez Verdejo (1.1)"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r credit}
+set.seed(1234)
+credit <- read.csv("crx.data", header = FALSE, na.strings = "?")
+credit_original <- read.csv("crx.data", header = FALSE, na.strings = "?")
+credit.trainIdx<-readRDS("credit.trainIdx.rds")
+credit.Datos.Train<-credit[credit.trainIdx,]
+credit.Datos.Test<-credit[-credit.trainIdx,]
+```
+
+En esta práctica se va a abordar el estudio de un problema típico de clasificación con el objetivo de crear un modelo de clasificación efectivo mediante aprendizaje supervisado. 
+
+La base de datos utilizada en este análisis es el conjunto de datos "Credit Approval", que contiene 16 variables y un total de 690 observaciones, siendo la última variable la clase a predecir (positiva o negativa). De las 15 variables predictoras, 6 son numéricas y 9 son categóricas.
+
+Para llevar a cabo el análisis práctico, los datos serán divididos en dos conjuntos:
+
+Conjunto de entrenamiento: 553 observaciones.
+Conjunto de prueba: 137 observaciones.
+
+```{r}
+summary(credit)
+```
+
+
+Variables numéricas: V2, V3, V8, V11, V14 y V15
+
+Variables categóricas: V1, V4, V5, V6, V7, V9, V10, V12, V13 y V16.
+
+# Variables Categóricas
+
+Vamos a comenzar haciendo un análisis de cada variable categórica individualmente y de cada una de ellas en relación a la variable clase
+
+
+```{r categoricas, echo =FALSE}
+library(ggplot2)
+library(reshape2)
+credit_melt <- melt(credit, id.vars = "V16")
+categoricas <- names(credit.Datos.Train)[sapply(credit.Datos.Train, function(col) is.factor(col) || is.character(col))]
+ggplot(subset(credit_melt, variable %in% categoricas), aes(x = value)) +
+  geom_bar(position = "dodge") +
+  facet_wrap(~ variable, scales = "free") +
+  labs(title = "Apariciones de cada valor en cada variable",
+       x = "Valor del predictor", y = "Frecuencia") +
+  theme_minimal()
+```
+
+
+```{r categoricasFaceta, echo =FALSE}
+library(ggplot2)
+library(reshape2)
+credit_melt <- melt(credit, id.vars = "V16")
+categoricas <- names(credit.Datos.Train)[sapply(credit.Datos.Train, function(col) is.factor(col) || is.character(col))]
+ggplot(subset(credit_melt, variable %in% categoricas), aes(x = value, fill = V16)) +
+  geom_bar(position = "dodge") +
+  facet_wrap(~ variable, scales = "free") +
+  labs(title = "Relación de predictores categóricos con la variable de clase",
+       x = "Valor del predictor", y = "Frecuencia") +
+  theme_minimal()
+```
+
+## V1
+
+V1 se trata de un predictor categórico con valores "a" y "b". También presenta valores nulos.
+```{r summaryV1}
+V1 = credit$V1
+apariciones <- table(V1, useNA = "ifany")
+frecuencia <- prop.table(apariciones) * 100
+cbind(apariciones, frecuencia)
+```
+Como podemos ver, el valor categórico "b" aparece alrededor de 2/3 de las veces, "a" algo menos de 1/3 y hay una docena de casos nulos.
+
+Para entender la importancia del predictor con respecto a la clase, usamos un histograma con facetas. 
+
+Se puede apreciar que existen el mismo número de casos de la categoría con valor "a" para ambos valores de clase. También hay un aumento de casos para la combinación "b" y "-", aún así, concluimos en que no es una variable muy determinante ya que no se da un cambio de radical de distribución.
+
+
+## V4
+
+V4 se trata de un predictor categórico con valores "l", "u" e "y". También presenta valores nulos.
+```{r summaryV4}
+V4 = credit$V4
+apariciones <- table(V4, useNA = "ifany")
+frecuencia <- prop.table(apariciones) * 100
+cbind(apariciones, frecuencia)
+```
+El valor "l" casi no aparece, "u" es valor predominante e "y" aparece algo menos de 1/4 de las veces. También hay 6 casos nulos.
+
+Usamos su histograma con facetas para cuantificar la importancia de la variable con respecto a la clase.
+
+Ambos histogramas tienen una forma pareciada, destacando que "y" pierde la mitad de los casos según la clase. No parece ser un predictor muy importante.
+
+## V5
+```{r summaryV5}
+V5 = credit$V5
+apariciones <- table(V5, useNA = "ifany")
+frecuencia <- prop.table(apariciones) * 100
+cbind(apariciones, frecuencia)
+```
+- "g": Es la categoría más frecuente en ambas clases, con frecuencias muy similares, no parece diferenciarse        mucho entre clases.
+- "p": En este caso hay una diferencia notable donde la clase más frecuente es "-"
+- "gg" y los valores NA son muy poco frecuentes
+
+## V6 
+
+V6 se trata de un predictor categórico que presenta valores nulos.
+
+```{r summaryV6}
+V6 = credit$V6
+apariciones <- table(V6, useNA = "ifany")
+frecuencia <- prop.table(apariciones) * 100
+cbind(apariciones, frecuencia)
+```
+
+Como se observa, el valor categórico más frecuente en la variable V6 es "c", con un total de 137 apariciones, mientras que valores como "r" aparecen tan solo 3 veces, lo que evidencia una distribución desbalanceada en esta variable. Además, la variable contiene 9 casos nulos.
+
+La categoría "c" domina en frecuencia, seguida de "q" y "aa", mientras que otras categorías como "w" e "i" tienen una representación considerablemente menor. Esta disparidad puede influir en la capacidad del modelo para generalizar, especialmente en las categorías con baja frecuencia.
+
+Para evaluar la importancia de V6 respecto a la clase objetivo, analizamos su distribución mediante un histograma con facetas. Las distribuciones para las clases "+" y "-" muestran variaciones significativas. Por ejemplo:
+
+  -Valores como "aa", "c", y "i" son más frecuentes en la clase "-".
+  -Otros valores tienen una mayor representación en la clase "+", lo que sugiere que V6 podría estar asociada con la variable de clase.
+  
+Este análisis preliminar indica que V6 tiene el potencial de ser un predictor relevante, ya que muestra patrones específicos en su relación con las clases objetivo.
+
+## V7
+```{r summaryV7}
+V7 = credit$V7
+apariciones <- table(V7, useNA = "ifany")
+frecuencia <- prop.table(apariciones) * 100
+cbind(apariciones, frecuencia)
+```
+- La categoría "v" es la dominante, especialmente en la clase "-".
+- Para "ff" y "h", podemos observar que hay también gran diferencia entre las clases.
+- Las demás categorías tienen muy poca frecuencia y valores de clase similares.
+
+## V9
+
+V9 se trata de un predictor categórico con valores "f" y "t". No presenta valores nulos.
+```{r summaryV9}
+V9 = credit$V9
+apariciones <- table(V9, useNA = "ifany")
+frecuencia <- prop.table(apariciones) * 100
+cbind(apariciones, frecuencia)
+```
+La frecuencia de ambos valores es casi igual, cerca del 50/50.
+
+Con su histograma con facetas, es evidente la diferencia de ambos histogramas, por un lado tenemos que cuando se trata de ejemplos con la clase "-", las ocurrencias del valor "f" son mucho mayores que las de "t" y viceversa con las de la clase "+".
+
+Esta variable puede ser de verdadera importancia.
+
+
+## V10 
+
+V10 se trata de un predictor categórico.
+
+```{r summary10}
+V10 = credit$V10
+apariciones <- table(V10, useNA = "ifany")
+frecuencia <- prop.table(apariciones) * 100
+cbind(apariciones, frecuencia)
+```
+
+Como podemos observar, el valor "f" es la más frecuente en la variable V10, con un total de 395 apariciones, lo que representa aproximadamente el 57.25% del total. Por otro lado, el valor "t" aparece 295 veces, equivalente al 42.75%. Esto muestra que la variable está moderadamente desbalanceada en términos de frecuencias.
+
+En cuanto a la relación entre V10 y la clase objetivo:
+
+Un análisis más detallado a través de un gráfico muestra que el valor "f" es notablemente más común en la clase "-", mientras que el valor "t" está más equilibrado entre las dos clases.
+Esto sugiere que V10 podría tener un papel importante como predictor, especialmente al discriminar entre las dos clases.
+
+
+## V12 
+
+V12 se trata de un predictor categórico.
+
+```{r summary12}
+V12 = credit$V12
+apariciones <- table(V12, useNA = "ifany")
+frecuencia <- prop.table(apariciones) * 100
+cbind(apariciones, frecuencia)
+```
+La variable V12 presenta dos valores principales: f y t. el valor "f" representando aproximadamente el 54.20% del total, mientras que "t" representa el 45.80%. Aunque la diferencia entre ambos valores no es extremadamente grande, existe cierto desbalance en las frecuencias.
+
+En cuanto a la relación con la clase objetivo:
+
+Al igual que en la variable V10, el valor f es más prevalente en la clase "-", lo que indica una asociación más fuerte con esta clase.
+Por otro lado, el valor t tiene una distribución más equilibrada entre las clases + y -.
+
+## V13
+
+```{r summary13}
+V13 = credit$V13
+apariciones <- table(V13, useNA = "ifany")
+frecuencia <- prop.table(apariciones) * 100
+cbind(apariciones, frecuencia)
+```
+Aunque "g" es dominante y casi uniforme entre clases, "s" muestra una asociación más clara con "-". Y "p" tiene muy pocas apariciones.
+
+# Variables Numéricas
+
+Seguimos haciendo un análisis de cada variable numérica individualmente y de cada una de ellas en relación a la variable clase
+
+```{r numericas, echo =FALSE}
+credit_melt <- melt(credit, id.vars = "V16")
+numericas <- c("V2", "V8", "V14")
+credit_melt$value <- as.numeric(credit_melt$value)
+ggplot(subset(credit_melt, variable %in% numericas), aes(x = value, fill = V16)) +
+    geom_histogram(position = "dodge", bins = 30, alpha = 0.7, na.rm = TRUE) +
+    facet_wrap(~ variable, scales = "free") +
+    labs(title = "Relación de predictores numéricos con la variable de clase",
+         x = "Valor del predictor", y = "Frecuencia") +
+    theme_minimal()
+
+```
+
+
+## V2
+
+V2 es un predictor numérico de tipo float.
+```{r summaryV2}
+V2 = credit$V2
+summary(V2)
+```
+
+A primera vista, parece ser que el 75% de los valores están entre 13,75 y 38.23, por lo que puede haber valores fuera de rango. Otro indicador es que la media supera a la mediana.
+
+En su histograma, vemos como existen valores extremos a partir de 60 que están afectando a la media como veíamos con los cuartiles. Aún con esto, podemos deducir que sigue una distribución normal sesgada hacia la derecha 
+
+En cuanto a su relación con la clase, hay que comprobar si tiene un comportamiento distinto la distribución de la probabilidad de la variable según la clase.
+
+Se puede apreciar que ambos histogramas tienen densidad de probabilidad y sus medias y medianas son casi iguales. Podemos decir que no es una variable determinante.
+
+
+## V8
+
+V8 es un predictor numérico de tipo float.
+```{r summaryV8}
+V8 = credit$V8
+summary(V8)
+```
+
+A primera vista, los valores parecen concentrarse principalmente entre 0.165 y 2.625 (dentro del 75% de los datos), con un valor máximo extremo de 28.5, lo que indica la presencia de posibles valores atípicos que están afectando a la media y provocando que sea mayor que la mediana. Esto sugiere una distribución sesgada a la derecha.
+
+Al observar el histograma segmentado por clase:
+
+Se puede notar que los valores pequeños (especialmente cerca de 0 y 1) son predominantes para ambas clases.
+Sin embargo, la clase - muestra mayor densidad para valores bajos de V8, mientras que la clase + tiene una representación ligeramente mayor en valores moderados.
+Esto indica que podría haber una leve relación entre V8 y la clase objetivo, aunque no parece ser un predictor extremadamente fuerte.
+
+## V14
+
+V14 es un predictor numérico de tipo float.
+
+```{r summaryV14}
+V14 = credit$V14
+summary(V14)
+```
+La mediana está más cerca del primer cuartil que del tercer cuartil y la media es mayor que la mediana, lo que refuerza, como se puede observar también en el histograma que hay una distribución sesgada hacia los valores altos y asimetría positiva.
+
+La distribución de V14 entre clases difiere. En los valores más altos se puede observar que solo tiene representación la clase negativa (-). V14 parece tener un poder discriminativo moderado para la clasificación.
+
+
+## Análisis monovariable de 3 predictores 
+
+Para los siguientes predictores numéricos que hemos considerado los más interesantes, vamos a realizar un análisis monovariable 
+
+
+## V3 
+
+V3 es un predictor numérico de tipo float.
+```{r summaryV3}
+V3 = credit$V3
+summary(V3)
+```
+A primera vista, parece ser que el 75% de los valores están entre 0 y 7, por lo que se parece a la variable anterior en que puede haber valores fuera de rango y que la media supera a la mediana.
+
+```{r histV3, echo = FALSE}
+hist(credit$V3,
+main = "Variable V3",
+ylab = "Density",
+probability = TRUE)
+dens <- density(credit$V3, na.rm = TRUE)
+lines(dens, col = "red", lwd = 2)
+rug(jitter(V3), col = "darkgreen")
+```
+
+Con este histograma enriquecido se aprecia como la distribución es una normal sesgada hacia la derecha, pero en mayor proporción que la primera. Gracias al jitter podemos ver los valores extremos que podrían ser outliers.
+´
+En cuanto a su relación con la clase, vamos a ver si tiene un comportamiento distinto la distribución de la probabilidad de la variable según la clase.
+
+Más allá, veremos un diagrama Q-Q donde cada punto (x,y) hace referencia a un percentil concreto del 0 al 100 y tenemos una distribución teórica normal.
+
+```{r QQplotV3, echo = FALSE}
+p1 <- ggplot(data = credit, aes(sample = V3)) +
+ggtitle("QQ plot para variable V3") + 
+geom_qq(na.rm = TRUE) +  
+stat_qq_line() +
+xlab("Distribución teórica") +  
+ylab("Distribución muestral")  
+print(p1)
+```
+
+Como se puede apreciar, la distribución de la variable se desvía de la normal en los extremos, y en los valores medios, la media X y varianza Y es menor a la de la normal. Los puntos de los extremos están muy separados lo que podría indicar valores fuera de rango.
+
+Podemos detectar los valores fuera de rango con un diagrama de caja.
+
+```{r boxplotV3, echo = FALSE}
+ggplot(data = credit, aes(y = V3)) +
+geom_boxplot(fill = "lightblue", color = "black") +
+labs(title = "Boxplot de V3",
+y = "Valor")
+```
+
+
+
+Se puede ver fácilmente que los outliers o valores fuera de rango son los valores más altos de la variable. Un outlier es aquel punto que está más allá de 3/2 de la diferencia entre los valores Q3 y Q1 medida desde la mediana, siendo en el gráfico, el principio y el final de la caja Q1 y Q3, respectivamente.
+
+Si queremos usar más adelante técnicas como reducción de dimensionalidad basada en PCA, debemos saber que estos outliers pueden causar un detrimento en la efectividad de la técnica.
+
+```{r histV3.2, echo = FALSE}
+myhist = ggplot(data=credit,aes(x = V3,y=..density..)) +
+geom_histogram(col="green",fill="green",alpha=0.2) +  geom_density() +
+labs(title="Histograma para variable V3 según la clase", y="Apariciones") + 
+  geom_vline(xintercept = mean(credit$V3,na.rm = TRUE), col="blue") + 
+  geom_vline(xintercept = median(credit$V3,na.rm = TRUE), col="red")  + facet_wrap(~ V16)
+myhist
+```
+
+En esta gráfica vemos como dependiendo de la clase, un histograma tiene la densidad de probabilidad más pronunciada, es decir, que los valores están más agrupados que en el otro histograma. Esta variable podría ser relevante.
+
+
+## V11
+
+V11 es un predictor numérico de tipo float.
+```{r summaryV11}
+V11 = credit$V11
+summary(V11)
+```
+
+La mayoría de los valores de V11 están concentrados cerca de 0, ya que tanto el mínimo, el primer cuartil, y la mediana son 0.0.
+
+El 75% de los datos tienen un valor menor o igual a 3.0 (según el tercer cuartil).
+
+Existe un valor máximo de 67.0, lo cual es significativamente mayor que el resto de los valores y podría ser un valor extremo o outlier que merece más atención.
+
+
+
+```{r histV11, echo = FALSE}
+hist(credit$V11,
+main = "Variable V11",
+ylab = "Density",
+probability = TRUE)
+dens <- density(credit$V11, na.rm = TRUE)
+lines(dens, col = "red", lwd = 2)
+rug(jitter(V11), col = "darkgreen")
+```
+
+La distribución de V11 es altamente asimétrica hacia la derecha (sesgo positivo). Esto se evidencia por un pico pronunciado cerca de 0 y una larga cola que se extiende hacia valores más altos.
+
+La curva de densidad (línea roja) confirma el sesgo positivo de la distribución. El decrecimiento gradual de la curva hacia la derecha sugiere la presencia de valores más altos, pero menos frecuentes.
+
+Los pequeños segmentos en la parte inferior (rug plot) muestran la dispersión de los valores reales. Observamos que la mayoría de los datos están agrupados al inicio, con pocos valores dispersos hacia el final del rango.
+
+Del gráfico Q-Q plot de V11, podemos destacar lo siguiente:
+
+```{r QQplotV11, echo = FALSE}
+p1 <- ggplot(data = credit, aes(sample = V11)) +
+ggtitle("QQ plot para variable V11") + 
+geom_qq(na.rm = TRUE) +  
+stat_qq_line() +
+xlab("Distribución teórica") +  
+ylab("Distribución muestral")  
+print(p1)
+```
+
+Los puntos se alinean con la línea teórica de la distribución normal en el rango medio, pero se desvían significativamente en los extremos. Esto indica que la distribución de V11 no sigue una normal estricta.
+
+Los puntos que se alejan en el extremo derecho confirman un sesgo hacia valores positivos. Esto respalda lo que ya habíamos contemplado anteriormente.
+
+
+Para detectar los valores fuera de rango utilizamos un diagrama de caja.
+
+```{r boxplotV11, echo = FALSE}
+ggplot(data = credit, aes(y = V11)) +
+geom_boxplot(fill = "lightblue", color = "black") +
+labs(title = "Boxplot de V11",
+y = "Valor")
+```
+
+El boxplot muestra que los datos están fuertemente sesgados hacia valores más bajos, ya que la caja está muy comprimida cerca del eje inferior.
+
+Hay varios outliers visibles como puntos dispersos por encima. Estos outliers son aquellos valores que se alejan significativamente del rango intercuartílico.
+
+La presencia de muchos outliers y una mediana desplazada cerca de 0 sugiere que V11 no sigue una distribución normal, sino una asimetrica.
+
+
+
+```{r histV11.2, echo = FALSE}
+myhist = ggplot(data=credit,aes(x = V11,y=..density..)) +
+geom_histogram(col="green",fill="green",alpha=0.2) +  geom_density() +
+labs(title="Histograma para variable V11 según la clase", y="Apariciones") + 
+  geom_vline(xintercept = mean(credit$V11,na.rm = TRUE), col="blue") + 
+  geom_vline(xintercept = median(credit$V11,na.rm = TRUE), col="red")  + facet_wrap(~ V16, scales = "free")
+myhist
+```
+
+En este gráfico, vemos la distribución de la variable V11 separada por las clases.
+
+Podemos observar que aunque ambas clases muestran distribuciones asimétricas y sesgadas hacia la derecha, la clase "+" parece tener una mayor variabilidad en los valores altos de V11, como lo indican las observaciones dispersas en rangos más amplios.
+
+## V15
+
+```{r summaryV15}
+V15 = credit$V15
+summary(V15)
+```
+El primer cuartil es 0 y la mediana está muy cerca de 0, lo que indica que la mayoría de los valores de V15 son pequeños.
+
+La media (1017.4) es mucho más alta que los cuartiles, lo que sugiere que existen valores extremadamente grandes (outliers) que están influyendo significativamente en la media.
+
+```{r histV15, echo = FALSE}
+hist(credit$V15,
+main = "Variable V15",
+ylab = "Density",
+probability = TRUE)
+dens <- density(credit$V15, na.rm = TRUE)
+lines(dens, col = "red", lwd = 2)
+rug(jitter(V15), col = "darkgreen")
+```
+
+La densidad se concentra mayoritariamente en los valores cercanos a cero y la distribución está extremadamente sesgada a la derecha, con una larga cola hacia los valores altos.
+
+```{r QQplotV15, echo = FALSE}
+p1 <- ggplot(data = credit, aes(sample = V15)) +
+ggtitle("QQ plot para variable V15") + 
+geom_qq(na.rm = TRUE) +  
+stat_qq_line() +
+xlab("Distribución teórica") +  
+ylab("Distribución muestral")  
+print(p1)
+```
+
+Los puntos del QQ plot muestran una fuerte desviación de la línea de normalidad, especialmente en los valores más altos, lo que confirma que la distribución de V15 no es normal. Los valores extremos en la cola derecha destacan como puntos alejados de la tendencia general (outliers significativos)
+
+
+```{r boxplotV15, echo = FALSE}
+library(ggplot2)
+library(lattice)
+library(reshape2)
+bwplot(~ V15 | factor(V16), data = credit_original,
+       main = "Boxplot V15 por clases",
+       xlab = "V15",
+       col = "lightblue",
+       panel = function(...) {
+         panel.grid(h = -1, v = 0)
+         panel.bwplot(...)
+       })
+```
+
+La clase (+) tiene más dispersión y valores altos en comparación a la clase negativa. Esto nos indica que V15 tiene una fuerte relación con la variable de clase V16, por lo tanto sea un predictor de gran fuerza y los outliers sean necesarios y no debamos eliminarlos.
+
+```{r histV15.2, echo = FALSE}
+myhist = ggplot(data=credit,aes(x = V15,y=..density..)) +
+geom_histogram(col="green",fill="green",alpha=0.2) +  geom_density() +
+labs(title="Histograma para variable V15 según la clase", y="Apariciones") + 
+  geom_vline(xintercept = mean(credit$V15,na.rm = TRUE), col="blue") + 
+  geom_vline(xintercept = median(credit$V15,na.rm = TRUE), col="red")  + facet_wrap(~ V16, scales = "free")
+myhist
+```
+
+En ambos casos, los valores atípicos están elevando la media (azul), alejándola considerablemente de la mediana (roja). Esto es más evidente en la clase (+). 
+
+Aunque ambas clases comparten la tendencia de acumulación de valores bajos, la clase + parece tener una distribución más dispersa, con un mayor número de valores altos. Esto sugiere que V15 podría ser un indicador relevante para diferenciar entre las clases como ya observabamos anteriormente.
+
+
+# Análisis multivariable
+
+A continuación, se va a realizar un análisis multivariable de algunos predictores numéricos
+
+```{r multi}
+library(GGally)
+ggpairs(credit.Datos.Train, columns = c(14, 11, 15), aes(color = V16),) +
+  ggtitle("Relación entre columnas 1, 3 y 4 en Credit")
+```
+
+Se analizaron tres predictores numéricos (V14, V11 y V15) para explorar sus relaciones y distribuciones. 
+
+En primer lugar, se analizaron las correlaciones entre las variables. Los valores obtenidos mostraron relaciones débiles entre los predictores, con correlaciones bajas en magnitud y cercanas a cero: por ejemplo, entre V14 y V11 se obtuvo una correlación de -0.114, y entre V14 y V15, de 0.071. Esto indica que no hay una relación lineal fuerte entre las variables, lo que sugiere que aportan información no redundante al modelo.
+
+Además, las correlaciones fueron analizadas por clase, lo que permitió observar ligeras diferencias en las relaciones entre variables según la clase objetivo. Por ejemplo, en la relación entre V14 y V15, la correlación fue más marcada para la clase positiva (+), alcanzando 0.145, frente a -0.043 para la clase negativa (-). 
+
+En cuanto a las distribuciones marginales de los predictores, se observó un marcado sesgo hacia valores bajos en las variables, con densidades altas en los extremos inferiores y caídas rápidas hacia valores mayores.
+
+
+# Eliminación de variable redundante
+
+Fijándonos en los anteriores diagramas de V5 y V4 estas dos variables parecen idénticas, vamos a comprobar si es así.
+
+```{r}
+frecuencia_V4 <- table(credit_original$V4)
+print("Frecuencia de las categorías en V4:")
+print(frecuencia_V4)
+frecuencia_V5 <- table(credit_original$V5)
+print("Frecuencia de las categorías en V5:")
+print(frecuencia_V5)
+```
+De hecho ahora nos damos cuenta que V5 y V4 tienen las mismas frecuencias, vamos a comprobar si se trata de variables redundantes
+```{r}
+library(ggplot2)
+
+ggplot(credit_original, aes(x = V5, fill = V4)) +
+  geom_bar(position = "fill") +
+  labs(title = "Distribución de V5 y V4", y = "Proporción", x = "V5") +
+  theme_minimal()
+```
+
+Efectivamente como podemos observar hay una correspondencia directa 1:1 entre V4 y V5 por lo que podemos eliminar una.
+
+Eliminamos V5:
+
+```{r}
+credit <- credit[, !names(credit) %in% "V5"]
+
+```
+# Matriz de correlación para variables númericas
+
+```{r}
+numeric_vars <- credit[, sapply(credit, is.numeric)]
+correlation_matrix <- cor(numeric_vars, use = "pairwise.complete.obs")
+high_corr_pairs <- which(abs(correlation_matrix) > 0.8 & abs(correlation_matrix) < 1, arr.ind = TRUE)
+high_corr_pairs
+library(corrplot)
+corrplot(correlation_matrix, method = "color", type = "upper", order = "hclust",
+         tl.col = "black", tl.cex = 0.8, addCoef.col = "black")
+         
+dummies <- model.matrix(~ ., data = credit[, -ncol(credit)])  
+correlation_matrix <- cor(dummies, use = "pairwise.complete.obs")
+which(abs(correlation_matrix) > 0.9 & abs(correlation_matrix) < 1, arr.ind = TRUE)
+```
+
+Destacar que V2 y V8 tienen una correlación moderada. Por lo demás no hay correlaciones fuertes (0.7 o -0.7) por lo que aplicar PCA no tiene porqué ser necesario.
+
+
+# Preprocesado de datos
+
+## Paso a factores
+Antes de tratar los datos, las variables categóricas deben de ser convertidas a factores, actualmente son caracteres.
+```{r factor}
+str(credit)
+columnas_categoricas <- names(credit)[sapply(credit, function(col) is.factor(col) || is.character(col))]
+for (col in columnas_categoricas) {
+  credit[[col]] <- as.factor(credit[[col]])
+}
+str(credit)
+credit.Datos.Train<-credit[credit.trainIdx,]
+credit.Datos.Test<-credit[-credit.trainIdx,]
+```
+
+## Tratamiento de valores nulos 
+
+Se puede aplicar a credit.Datos.Train solo o credit ya que credit.Datos.Test no tiene nulos:
+
+```{r testNoNulo}
+colSums(is.na(credit.Datos.Test))
+```
+
+Verificación de valores nulos por columna de datos credit.Datos.Train:
+
+```{r traintNoNulo}
+colSums(is.na(credit.Datos.Train))
+```
+
+Para tratar los nulos en el caso de las variables categóricas, decidimos imputar los valores faltantes mediante el uso de la moda de la variable. Este método, aún introduciendo sesgo, permite mantener la coherencia estadística de los datos. No nos debemos preocupar por comprobar si al imputar un valor estamos alterando la moda ya que los valores predominantes se diferencian bastante del resto en la variable, como se puede comprobar con la tabla de frecuencias en el apartado de DEA.
+
+```{r valores categoricos a nulos}
+colSums(is.na(credit.Datos.Train))
+credit.Datos.Train <- as.data.frame(lapply(credit.Datos.Train, function(x) {
+  if (is.factor(x)) { 
+    moda <- names(sort(table(x), decreasing = TRUE))[1] # Calcular la moda
+    x[is.na(x)] <- moda # Reemplazar NAs por la moda
+  }
+  return(x) # Retornar la columna, modificada o no
+}))
+```
+
+
+Para tratar los valores nulos de las variables numéricas existen más métodos a tener en cuenta, pero todos introducirían un sesgo, menos el de eliminar las observaciones con datos faltantes.
+
+Sin embargo, eso no siempre se puede hacer ya que estás perdiendo información relevante.
+
+Por eso, hemos decidido usar un preprocesado que incluye Caret en su librería: medianImpute
+
+Hemos elegido este debido a su robustez frente a valores atípicos y distribuciones sesgadas.
+
+```{r valores numericos a nulos}
+colSums(is.na(credit.Datos.Train))
+numeric_vars <- names(credit.Datos.Train)[sapply(credit.Datos.Train, is.numeric)]
+library(caret)
+ppmedian <- preProcess(credit.Datos.Train[numeric_vars], 
+method = c("medianImpute"),
+na.remove = TRUE,
+k = 5,
+knnSummary = mean,
+outcome = NULL,
+fudge = .2,
+numUnique = 3,
+verbose = TRUE,
+)
+credit.Datos.Train[numeric_vars] <- predict(ppmedian, credit.Datos.Train[numeric_vars])
+colSums(is.na(credit.Datos.Train))
+```
+
+
+# Entrenamiento de Modelos
+
+## Modelo Ranger
+El algoritmo Ranger combina características de dos algoritmos populares: Random Forest y Gradient Boosting. Es una implementación altamente optimizada de Random Forests y Conditional Inference Forests.
+
+```{r param}
+library("ranger")
+rangerInfo = getModelInfo("ranger")
+rangerInfo = rangerInfo$ranger
+rangerInfo$parameters
+```
+
+El algoritmo ranger ofrece tres parámetros:
+mtry: Este parámetro controla cuántos predictores se seleccionan aleatoriamente para considerar en cada división del árbol.
+
+Con un valor bajo de mtry hay más aleatoriedad, mayor diversidad entre los árboles, pero puede disminuir la precisión. Con un valor alto de de mtry (cercano al número total de predictores):
+Menos aleatoriedad, los árboles son más similares entre sí, pero pueden perder robustez ante sobreajuste.
+
+splitrule: Define cómo el modelo decide la mejor división en cada nodo del árbol.
+
+min.node.size: Especifica el número mínimo de observaciones que un nodo debe contener para que el árbol pueda dividirlo aún más.Si es un valor pequeño, los árboles crecen más profundamente, lo que puede llevar a modelos más complejos que pueden sobreajustarse a los datos.
+
+Hay otro parámetro que no se ofrece directamente mirando en R, pero que se puede consultar en la documentación: num.trees y class.weights
+
+El parámetro num.trees en Ranger (y en general en algoritmos de Random Forests) especifica la cantidad de árboles de decisión que se construirán en el bosque aleatorio.
+
+El parámetro class.weights permite asignar pesos a las clases para tener en cuenta problemas de desbalance de clases.
+
+Realmente está hecho para casos extremos de desbalanceo como podría ser 90% y 10% pero quizás podría tener impacto en nuestros datos.
+
+Vamos a detallar una estrategia para la generación del grid de valores para hiperparámetros a usar.
+
+```{r gridRanger}
+rangerInfo = getModelInfo("ranger")
+rangerInfo = rangerInfo$ranger
+rangerInfo$parameters
+rangerInfo$grid
+```
+
+Ponemos especial énfasis en expand.grid.
+
+Se preparan los parámetros que salían en la especificación de R:
+
+mtry utiliza una función de caret: var_seq para generar valores según el número de predictores.
+
+min.node.size elige 1 si es un problema de clasificación y 5 si es un problema de regresión.
+
+splitrule utiliza "gini" y "extratrees" si es un problema de clasificación y "variance" y "extratrees" si es de regresión.
+
+Solo podemos añadir en este grid de parámetros los que nos muestra R al preguntar por estos, los parámetros ocultos no se pueden incluir.
+
+```{r expandGrid}
+
+mygrid = expand.grid(mtry = 1:5,
+                     splitrule = c("gini", "extratrees"),
+                     min.node.size = 1:3
+)
+
+print(mygrid)
+```
+
+num.trees al ser tan importante, hemos decidido usarlo también de manera externa al grid de parámetros.
+
+Se usará una validación cruzada de 10 pliegues para evitar el sesgo y la varianza que podría surgir al usar una única partición del conjunto de datos en el entrenamiento.
+
+```{r trainRanger}
+levels(credit.Datos.Train$V16) <- make.names(levels(credit.Datos.Train$V16), unique = TRUE)
+levels(credit.Datos.Test$V16) <- make.names(levels(credit.Datos.Test$V16), unique = TRUE)
+
+fitControl <- trainControl(
+  method = "cv", 
+  number = 10,
+  classProbs = TRUE,  # Activar predicciones de probabilidades
+  summaryFunction = defaultSummary
+)
+set.seed(1234)
+listaModelos = list()
+for(i in c(100,200,300,400,500,600)){
+  rangerFit <- train(
+  V16 ~ .,
+  data = credit.Datos.Train,
+  method = "ranger",
+  trControl = fitControl,
+  num.trees = i,
+  class.weights = c(0.4449275, 0.5550725),
+  tuneGrid = mygrid,  
+  importance = 'impurity', 
+  )
+  listaModelos[[as.character(i)]] = rangerFit  
+}
+
+# Recorriendo cada modelo de la lista
+for(i in names(listaModelos)) {
+  modelo <- listaModelos[[i]]  # Obtener el modelo correspondiente
+  
+  # Extraer la mejor precisión
+  mejor_accuracy <- max(modelo$results$Accuracy)  
+  
+
+  cat("\nModelo con", i, "árboles:\n")
+  cat("Mejor precisión:", mejor_accuracy, "\n")
+  
+
+  cat("Mejor configuración (bestTune):\n")
+  cat("mtry: ", modelo$bestTune$mtry, "\n")
+  cat("splitrule: ", modelo$bestTune$splitrule, "\n")
+  cat("min.node.size: ", modelo$bestTune$min.node.size, "\n")
+
+}
+modeloRanger <- listaModelos[["500"]]
+
+```
+
+Esto indica que el mejor valor para num.trees es 500. Si afináramos más el grano sobre num.trees:
+
+```{r numtrees}
+set.seed(1234)
+listaModelos = list()
+for(i in c(450,475,500,525,550)){
+  rangerFit <- train(
+  V16 ~ .,
+  data = credit.Datos.Train,
+  method = "ranger",
+  trControl = fitControl,
+  num.trees = i,
+  class.weights = c(0.4449275, 0.5550725),
+  tuneGrid=mygrid
+  )
+  listaModelos[[as.character(i)]] = rangerFit  
+}
+
+# Recorriendo cada modelo de la lista
+for(i in names(listaModelos)) {
+  modelo <- listaModelos[[i]]  # Obtener el modelo correspondiente
+  
+  # Extraer la mejor precisión
+  mejor_accuracy <- max(modelo$results$Accuracy)  # Obtener la mejor precisión
+  
+  # Imprimir la mejor precisión y la mejor configuración
+  cat("\nModelo con", i, "árboles:\n")
+  cat("Mejor precisión:", mejor_accuracy, "\n")
+
+}
+modeloRanger550 <- listaModelos[["550"]]
+listaModelos = list()
+```
+
+Ha mejorado solamente un 0,2%. Esto se puede deber a la componente aleatoria de Random Forests (por ejemplo: al elegir las características con mtry). Pero si no vemos una mejora, es porque realmente no importa afinar más el grano.
+
+Dicho esto, nos quedaremos con el mejor modelo.
+
+Probaremos si la precisión se mantiene con los datos de entrenamiento del modelo.
+
+```{r trainRangerT}
+pred.train <- predict(modeloRanger550 , credit.Datos.Train)
+pred <- factor(pred.train)
+real <- factor(credit.Datos.Train$V16)
+confusionMatrix(pred, real)
+```
+
+La precisión se acerca mucho al 100%. Ahora vamos a probar con los datos de Test.
+
+```{r testRanger}
+pred.test <- predict(modeloRanger550 , credit.Datos.Test)
+pred <- factor(pred.test)
+real <- factor(credit.Datos.Test$V16)
+confusionMatrix(pred, real)
+```
+```{r}
+library(pROC)
+
+probs1 <- predict(modeloRanger550, newdata = credit.Datos.Test, type = "prob")
+
+roc_curve1 <- roc(credit.Datos.Test$V16, probs1[, 2])
+plot(roc_curve1, xlab = "Especificidad", ylab = "Sensibilidad")
+auc_value1 <- auc(roc_curve1)
+print(auc_value1)
+
+```
+
+Obtenemos una precisión razonable cercana al 85%, por lo que el modelo funciona correctamente.
+
+El valor de Kappa de 0.6932 sugiere una buena concordancia entre las predicciones y las verdaderas etiquetas, considerando el azar.
+
+El valor del test de Mcnemar es 0.1904, lo que indica que no hay una diferencia significativa en los errores de clasificación entre las dos clases. Es decir, el modelo no muestra un sesgo fuerte hacia una de las clases.
+
+Es normal ver una pequeña bajada en la precisión del modelo ante los datos de train y test.
+
+La medida ROC indica un 0.9454 sobre 1, lo que significa que el modelo tiene un 95% de probabilidad de clasificar correctamente una instancia positiva frente a una negativa de forma aleatoria.
+
+
+## Ranger sin preprocesado
+Con este preprocesado de los datos alternativo, optamos por eliminar los valores fuera de rango y centrar y escalar los valores para ver si podría traer mejoras en la precisión.
+
+Para ello, vamos a transformar los datos (añadiendo un sesgo) para que los outliers sean convertidos usando esta definición de outlier que encontramos en el manual de Caret:
+
+Un outlier es aquel punto que está más allá de 3/2 de la diferencia entre los valores Q3 y Q1 medida desde la mediana.
+
+Después aprovechamos que no existen los valores fuera de rango para utilizar otro preprocesado sensible a ellos como es el de knnVecinos, que también transforma las variables numéricas para que estén centradas y escaladas.
+
+
+```{r pruebas}
+
+credit.Datos.Train.lim<-credit[credit.trainIdx,]
+credit.Datos.Test.lim<-credit[-credit.trainIdx,]
+
+credit.Datos.Train.lim <- as.data.frame(lapply(credit.Datos.Train.lim, function(x) {
+  if (is.factor(x)) { 
+    moda <- names(sort(table(x), decreasing = TRUE))[1] # Calcular la moda
+    x[is.na(x)] <- moda # Reemplazar NAs por la moda
+  }
+  return(x) # Retornar la columna, modificada o no
+}))
+
+
+nulos_por_fila <- apply(credit.Datos.Train.lim, 1, function(x) sum(is.na(x)))
+# Filtrar las filas que tienen 5 o menos NA
+credit.Datos.Train.lim <- credit.Datos.Train.lim[nulos_por_fila <= 4, ]
+
+library(dplyr)
+# Función para calcular límites basados en la mediana y el rango intercuartílico
+calcular_limites_mediana <- function(x) {
+  mediana <- median(x, na.rm = TRUE)
+  Q1 <- quantile(x, 0.25, na.rm = TRUE)
+  Q3 <- quantile(x, 0.75, na.rm = TRUE)
+  IQR <- Q3 - Q1
+  limite_inferior <- mediana - (3/2) * IQR
+  limite_superior <- mediana + (3/2) * IQR
+  return(c(limite_inferior, limite_superior))
+}
+
+# Función para cortar valores fuera del rango
+clipping_mediana <- function(x) {
+  limites <- calcular_limites_mediana(x)
+  x[x < limites[1]] <- limites[1]  # Reemplaza valores menores al límite inferior
+  x[x > limites[2]] <- limites[2]  # Reemplaza valores mayores al límite superior
+  return(x)
+}
+
+mostrar_valores_fuera_de_rango <- function(x, var_name) {
+  limites <- calcular_limites_mediana(x)
+  fuera_de_rango <- x[x < limites[1] | x > limites[2]]
+  if (length(fuera_de_rango) > 0) {
+    cat("\nVariable:", var_name, "\n")
+    cat("Límite inferior:", limites[1], " | Límite superior:", limites[2], "\n")
+    cat("Valores fuera de rango:\n")
+    cat("Número de valores fuera de rango:", length(fuera_de_rango), "\n")
+  }
+}
+
+# Aplicar a todas las columnas numéricas y mostrar la información
+numeric_vars <- credit.Datos.Train.lim %>% select(where(is.numeric))
+lapply(names(numeric_vars), function(var) {
+  mostrar_valores_fuera_de_rango(numeric_vars[[var]], var)
+})
+
+credit.Datos.Train.lim <- credit.Datos.Train.lim %>%
+  mutate(across(where(is.numeric), clipping_mediana))
+
+numeric_vars <- credit.Datos.Train.lim %>% select(where(is.numeric))
+lapply(names(numeric_vars), function(var) {
+  mostrar_valores_fuera_de_rango(numeric_vars[[var]], var)
+})
+
+colSums(is.na(credit.Datos.Train.lim))
+numeric_vars <- names(credit.Datos.Train.lim)[sapply(credit.Datos.Train.lim, is.numeric)]
+library(caret)
+ppmedian <- preProcess(credit.Datos.Train.lim[numeric_vars], 
+method = c("knnImpute"),
+na.remove = TRUE,
+k = 5,
+knnSummary = mean,
+outcome = NULL,
+fudge = .2,
+numUnique = 3,
+verbose = TRUE,
+)
+credit.Datos.Train.lim[numeric_vars] <- predict(ppmedian, credit.Datos.Train.lim[numeric_vars])
+credit.Datos.Test.lim[numeric_vars] <- predict(ppmedian, newdata = credit.Datos.Test.lim[numeric_vars])
+colSums(is.na(credit.Datos.Train.lim))
+
+```
+
+```{r otroPre}
+set.seed(1234)
+levels(credit.Datos.Train.lim$V16) <- make.names(levels(credit.Datos.Train.lim$V16), unique = TRUE)
+levels(credit.Datos.Test.lim$V16) <- make.names(levels(credit.Datos.Test.lim$V16), unique = TRUE)
+listaModelos = list()
+for(i in c(100,200,300,400,500,600)){
+  rangerFit <- train(
+  V16 ~ .,
+  data = credit.Datos.Train.lim,
+  method = "ranger",
+  trControl = fitControl,
+  num.trees = i,
+  class.weights = c(0.4449275, 0.5550725),
+  tuneGrid = mygrid,  
+  importance = 'impurity'  # Para obtener la importancia de las variables
+  )
+  listaModelos[[as.character(i)]] = rangerFit  
+}
+# Recorriendo cada modelo de la lista
+for(i in names(listaModelos)) {
+  modelo <- listaModelos[[i]]  # Obtener el modelo correspondiente
+  
+  # Extraer la mejor precisión
+  mejor_accuracy <- max(modelo$results$Accuracy)  # Obtener la mejor precisión
+  
+  # Imprimir la mejor precisión y la mejor configuración
+  cat("\nModelo con", i, "árboles:\n")
+  cat("Mejor precisión:", mejor_accuracy, "\n")
+  
+  # Imprimir la mejor configuración de hiperparámetros
+  cat("Mejor configuración (bestTune):\n")
+  # Imprimir los valores específicos de 'bestTune'
+  cat("mtry: ", modelo$bestTune$mtry, "\n")
+  cat("splitrule: ", modelo$bestTune$splitrule, "\n")
+  cat("min.node.size: ", modelo$bestTune$min.node.size, "\n")
+
+}
+modeloRanger <- listaModelos[["600"]]
+listaModelos = list()
+```
+
+Podemos ver como ahora tenemos un modelo con un número distinto de num.trees y ligeramente más precisión.
+
+```{r testRang}
+pred.test <- predict(modeloRanger , credit.Datos.Test.lim)
+pred <- factor(pred.test)
+real <- factor(credit.Datos.Test.lim$V16)
+confusionMatrix(pred, real)
+```
+
+Conseguimos mejorar en un 3% la precisión indicando que este preprocesado alternativo es mejor para este algoritmo, desde un punto de vista estadístico.
+
+
+## Modelo GLM
+
+El Modelo de Regresión Generalizada es una herramienta poderosa en el análisis estadístico que se utiliza para modelar relaciones entre variables continuas y/o categóricas. Es una extensión de los modelos de regresión lineal que permite manejar datos que no siguen una distribución normal o linealmente dependiente de una variable independiente. Este modelo integra una función de enlace y una familia de distribución, permitiendo así que las variables dependientes no estén limitadas a una distribución normal.
+
+El modelo GLM se entrenó usando caret, un paquete en R que facilita el proceso de entrenamiento de modelos mediante validación cruzada. A continuación se muestran los parámetros y la configuración utilizados:
+
+  -Función de enlace: Por defecto, caret utiliza una función de enlace lineal (identity), bajo la suposición de una distribución normal para la variable dependiente (gaussian).
+  
+  -Pre-procesamiento: Se aplicó centrado y escalado a las variables predictoras (preProcess = c("center", "scale")) para normalizar las escalas y evitar problemas de convergencia y overfitting.
+  
+  -Validación cruzada: Se utilizó un método de validación cruzada de 10 pliegues para evaluar la robustez del modelo. Esta técnica permite probar el modelo en múltiples conjuntos de entrenamiento y validación, proporcionando una estimación más robusta del rendimiento.
+  
+```{r}
+caret.glm <- train(
+  V16 ~ ., 
+  data = credit.Datos.Train, 
+  method = "glm", 
+  preProcess = c("center", "scale"),  # Normalización de datos
+  trControl = trainControl(method = "cv", number = 10)  # Validación cruzada
+)
+print(caret.glm)
+```
+
+Los resultados obtenidos tras el proceso de validación cruzada son los siguientes:
+
+Accuracy: 0.85 aproximadamente, indicando que el modelo predice correctamente la clase en el 85% de los casos en el conjunto de validación cruzada.
+Kappa: 0.7 aproximadamente, muestra una fuerte concordancia entre las predicciones del modelo y las clases observadas en el conjunto de validación. Este valor Kappa sugiere que hay una buena coincidencia entre las categorías predichas y las reales.
+Resampling Results: Los resultados de la validación cruzada revelan una distribución equilibrada de las clases en los diferentes pliegues, lo que indica que el modelo tiene una buena capacidad de generalización.
+
+Una vez que se completó el entrenamiento del modelo GLM utilizando la técnica de validación cruzada y el pre-procesamiento de datos, se procedió a evaluar su desempeño en el conjunto de test. 
+  
+```{r}
+columnas_categoricas <- names(credit.Datos.Train)[sapply(credit.Datos.Train, function(col) is.factor(col) || is.character(col))]
+for (col in columnas_categoricas) {
+  credit.Datos.Test[[col]] <- as.factor(credit.Datos.Test[[col]])
+}
+
+```
+
+Utilizando el modelo GLM entrenado, se van a hacer predicciones en el conjunto de test mediante la función predict(). Esto proporcionará las clases predichas para cada observación en el conjunto de test.
+
+```{r}
+predicciones_test <- predict(caret.glm, newdata = credit.Datos.Test)
+
+```
+
+Con las predicciones obtenidas, se construye la matriz de confusión para evaluar la precisión, sensibilidad, especificidad y otros criterios de desempeño del modelo. La matriz de confusión compara las clases predichas por el modelo con las clases reales en el conjunto de test.
+
+```{r}
+matriz_confusion <- confusionMatrix(predicciones_test, credit.Datos.Test$V16)
+print(matriz_confusion)
+```
+
+Tras completar el entrenamiento del modelo Generalized Linear Model (GLM) y evaluarlo en el conjunto de test, se obtuvieron los siguientes resultados:
+
+Matriz de Confusión:
+
+La matriz de confusión reveló que el modelo GLM logró una precisión del 82% aproximadamente con un intervalo de confianza del 95% que oscila entre 0.7506 y 0.8844. Esto indica que el modelo acierta en la clasificación de las clases con alta precisión.
+El valor de Kappa fue 0.651 aproximadamente, sugiriendo una relación moderada entre las clasificaciones predichas y las reales, con un nivel de acuerdo significativo.
+La prueba de McNemar proporcionó un valor p de 0.06619, indicando que las diferencias observadas no son estadísticamente significativas, lo que sugiere que el modelo no sobreajusta a las clases de manera excesiva.
+
+Sensibilidad y Especificidad:
+
+La sensibilidad del modelo (tasa de verdaderos positivos) fue del 77%, indicando que el modelo identifica correctamente a las observaciones negativas.
+La especificidad (tasa de verdaderos negativos) fue del 88%, demostrando una alta capacidad para rechazar observaciones que no pertenecen a la clase positiva.
+El valor de la Precisión Positiva fue del 89%, lo que sugiere que cuando el modelo predice positivamente, la mayoría de las veces es correcto.
+La Precisión Negativa fue del 76%, demostrando una buena capacidad para predecir observaciones negativas.
+
+```{r}
+library(pROC)
+
+probs1 <- predict(caret.glm, newdata = credit.Datos.Test, type = "prob")
+
+roc_curve1 <- roc(credit.Datos.Test$V16, probs1[, 2])
+plot(roc_curve1, xlab = "Especificidad", ylab = "Sensibilidad")
+auc_value1 <- auc(roc_curve1)
+print(auc_value1)
+```
+
+Al evaluar el modelo mediante la métrica del Área Bajo la Curva (AUC), el valor obtenido fue 0.9333, lo que indica que el modelo tiene una alta capacidad discriminativa entre las clases positivas y negativas.
+
+
+## Algoritmo nnet
+
+```{r, echo=FALSE}
+train_data <- credit.Datos.Train
+test_data <- credit.Datos.Test
+```
+
+El algoritmo nnet es una implementación de redes neuronales artificiales que utiliza un conjunto de capas interconectadas para modelar relaciones complejas entre las variables de entrada (predictores) y la variable objetivo (respuesta). El modelo aprende ajustando los pesos de las conexiones entre las neuronas en las diferentes capas mediante un proceso de optimización basado en el gradiente descendente.
+
+```{r}
+library(caret)
+modelLookup("nnet")
+```
+Los hiper-parametros son:
+
+  -   Size: Especifica el número de neuronas en la capa oculta. Más neuronas capturan relaciones complejas                pero aumenta el riesto de overfitting.
+  
+  -   Decay: Controla la penalización aplicada a los pesos de las conexiones para evitar el overfitting                (sobreajuste).
+
+Otro parametro importante es maxit que indica el número de iteracciones. Ciertos modelos necesitarán más o menos iteraciones para converger.
+
+```{r}
+set.seed(1231)
+formula <- V16 ~ .
+tuneGrid <- expand.grid(size = seq(2, 8, by = 2), decay = c(0.001, 0.01, 0.1))
+tuneGrid.ref1 <- expand.grid(size = 1:4, decay = seq(0.002, 0.008, by = 0.001))
+tuneGrid.ref2 <- expand.grid(size = 2*1:5, decay = c(0.001, 0.0035, 0.0055))
+tuneGrid.ref3 <- expand.grid(size = 1:4, decay = seq(0.001, 0.01, by = 0.0015))
+caret.nnet <- train(formula, 
+                    data = train_data, 
+                    method = "nnet", 
+                    preProc = c("center", "scale"), 
+                    tuneGrid = tuneGrid.ref1, 
+                    trControl = trainControl(method = "cv", number = 10),
+                    trace = FALSE,
+                    maxit = 150)
+
+summary(caret.nnet$finalModel)
+ggplot(caret.nnet, highlight = TRUE)
+predictions <- predict(caret.nnet, newdata = test_data)
+conf_matrix <- confusionMatrix(predictions, test_data$V16)
+print(conf_matrix)
+```
+A medida que aumenta el número de unidades ocultas, la precisión del modelo tiende a disminuir.
+El mejor rendimiento (máxima precisión) se observa para un número pequeño de unidades ocultas (2) y para el valor de Weight Decay = 0.004.
+
+Respecto a la 'Confusion Matrix':
+- Accuracy: el 86.13% de las observaciones han sido clasificadas correctamente es una buena precisión global.
+- Kappa: Indica un nivel alto de acuerdo entre predicciones y valores reales.
+- No information rate: si siempre predices (-), tendrías una precisión de 55.47%. La precisión del modelo (86.13%) es mucho mayor, lo que demuestra que el modelo está aprendiendo algo útil.
+
+- Test McNemar: el modelo no muestra sesgo hacia ninguna de las clases.
+
+-Tanto la sensibilidad como la especificidad son altas (88.16% y 83.61%, respectivamente), lo que indica que el modelo clasifica bien ambas clases.
+
+El modelo tiene un desempeño sólido y equilibrado, con alta precisión global (86.13%) y un buen balance entre sensibilidad y especificidad.
+
+```{r}
+library(pROC)
+probs1 <- predict(caret.nnet, newdata = test_data, type = "prob")
+roc_curve1 <- roc(test_data$V16, probs1[, 2])
+plot(roc_curve1, xlab = "Especificidad", ylab = "Sensibilidad")
+auc_value1 <- auc(roc_curve1)
+print(auc_value1)
+```
+Como podemos observar a través de la Curva ROC y del AUC (0.9184) el modelo tiene un buen rendimiento para distinguir entre las clases (AUC cercana a 1 indicaría un modelo casi perfecto).
+La curva sube rápidamente al principio, lo que significa que el modelo logra una alta sensibilidad con pocos falsos positivos.
+
+## Yeo-Jhonson, preprocesado alternativo para 'nnet'
+
+Vamos a probar ahora a transformar los datos y tratar las asímetrías de las variables numéricas y comprobar si esto influye positivamente en nuestro modelo y si podemos alcanzar un modelo más preciso.
+
+```{r}
+library(caret)
+library(e1071)
+numeric_vars<- numeric_vars[sapply(numeric_vars, is.numeric)]
+skewness_values1 <- sapply(numeric_vars, skewness, na.rm = TRUE)
+print(skewness_values1)
+```
+Podemos observar que las variables V11, V14 y V15 poseen fuertes asimetrías positivas, no hay ninguna asimetría negativa.
+
+```{r}
+numeric_vars <- train_data[, sapply(train_data, is.numeric)]
+
+
+preproc <- preProcess(numeric_vars, method = "YeoJohnson")
+
+train_data_transformed <- train_data
+train_data_transformed[, names(numeric_vars)] <- predict(preproc, numeric_vars)
+
+test_data_transformed <- test_data
+test_data_transformed[, names(numeric_vars)] <- predict(preproc, test_data[, names(numeric_vars)])
+
+skewness_values2 <- sapply(train_data_transformed[, names(numeric_vars)], skewness, na.rm = TRUE)
+print(skewness_values2)
+```
+Trás transformar las variables con Yeo-Jhonson, una técnica utilizada para transformar datos no normales en datos que se aproximen a una distribución normal. Hemos reducido la asímetria considerablemente.
+
+Ahora utilizamos estos nuevos datos para comprobar si hay mejoría, con los mismos parámetros e hiperparámetros que el mejor modelo de 'nnet'.
+
+Utilizando el mismo grid que para el otro preprocesado el modelo tendría una peor precisión, si buscamos un grid distinto que se ajuste mejor a los datos transformados, en este caso el grid 'ref3' podemos obtener:
+
+```{r}
+set.seed(1231)
+caret.nnet.yj <- train(
+  formula,
+  data = train_data_transformed,
+  method = "nnet",
+  preProc = c("center", "scale"),  
+  tuneGrid = tuneGrid.ref2,
+  trControl = trainControl(method = "cv", number = 10),
+  trace = FALSE,
+  maxit = 150
+)
+summary(caret.nnet.yj$finalModel)
+predictions.yj <- predict(caret.nnet.yj, newdata = test_data_transformed)
+conf_matrix.yj <- confusionMatrix(predictions.yj, test_data_transformed$V16)
+print(conf_matrix.yj)
+```
+
+
+- Accuracy: El porcentaje de predicciones correctas es idéntico al anterior.
+- Kappa: Es ligeramente mayor, indica una mejor concordancia entre las predicciones y los valores reales.
+- Test McNemar: El modelo tiene una distribución de errores razonablemente balanceada entre las clases. Aunque algo más desbalanceada.
+
+Mejor predicción en las predicciones positivas, esto puede ser beneficioso en el contexto en el que nos encontramos, datos bancarios.
+
+```{r}
+library(pROC)
+probs1 <- predict(caret.nnet, newdata = test_data, type = "prob")
+roc_curve1 <- roc(test_data$V16, probs1[, 2])
+auc_value1 <- auc(roc_curve1)
+print(auc_value1)
+```
+
+
+## Algoritmo svmRadial
+
+El algoritmo svmRadial utiliza un modelo de máquinas de soporte vectorial con un kernel radial. Este enfoque es útil para problemas no lineales, ya que el kernel radial transforma los datos en un espacio de mayor dimensión donde se pueden separar linealmente.
+
+```{r}
+library(caret)
+modelLookup("svmRadial")
+```
+Hiper-parámetros:
+
+- Sigma: Parámetro que determina la influencia de cada punto de datos en el modelo cuando se usa un núcleo radial (RBF). Controla la forma del kernel.
+    
+- C: Controla la compensación entre un margen más amplio y la clasificación correcta de todos los puntos de entrenamiento. Un valor alto de C hace que el modelo se enfoque en minimizar los errores de clasificación (margen estrecho), mientras que un valor bajo hace que el modelo sea más tolerante a errores (margen amplio).  -   C: el costo de penalización de clasificación errónea.
+
+```{r}
+library(caret)
+
+niveles_originales <- levels(train_data$V16)
+levels(train_data$V16) <- make.names(levels(train_data$V16), unique = TRUE)
+levels(test_data$V16) <- make.names(levels(test_data$V16), unique = TRUE)
+
+tuneGrid.svm <- expand.grid(C = c(0.1, 0.15, 0.2), sigma = c(0.01, 0.05, 0.1))
+tuneGrid.svm.ref <- expand.grid(C = c(0.1, 0.2, 0.25), sigma = seq(0.005, 0.02, by = 0.0015))
+
+train.control.svm <- trainControl(method = "cv", number = 10, classProbs = TRUE, summaryFunction = twoClassSummary)
+
+set.seed(1232)
+caret.svm <- train(
+  V16 ~ ., 
+  data = train_data, 
+  method = "svmRadial", 
+  tuneGrid = tuneGrid.svm, 
+  metric = "ROC", 
+  trControl = train.control.svm,
+  preProc = c("center", "scale") # Normalizar los datos
+)
+print(caret.svm$bestTune)
+predictions.svm <- predict(caret.svm, newdata = test_data)
+conf_matrix.svm <- confusionMatrix(predictions.svm, test_data$V16)
+print(conf_matrix.svm)
+
+```
+
+Este modelo tiene una alta precisión (84.67%) y es particularmente bueno clasificando la clase negativa (-) con una especificidad de 90.16% y un muy buen valor predictivo positivo.
+
+```{r}
+roc_curve_nnet <- roc(test_data$V16, predict(caret.nnet, newdata = test_data, type = "prob")[, 2])
+roc_curve_svm <- roc(test_data$V16, predict(caret.svm, newdata = test_data, type = "prob")[, 2])
+print(auc(roc_curve_nnet))
+print(auc(roc_curve_svm))
+```
+El modelo svmRadial ofrece un mejor rendimiento en términos de capacidad discriminativa (AUC = 0.931).
+
+
+# Comparación de modelos
+
+Comparando los resultados de los 4 modelos y posibles/distintos pre procesados, teniendo en cuenta el contexto en el que no encontramos (datos bancarios), si por ejemplo pensáramos que la V16 es el visto bueno a un préstamo, lo más interesante sería buscar un modelo que discrimine bien entre las dos clases y que reduzca al máximo el número de falsos positivos y así minimizara las pérdidas.
+
+Por esto, el modelo de 'ranger' con los datos transformados por un preprocesado de tratamiento de nulos con knn-vecinos y tratamiento de outliers es el que mejor desempeño tiene.
+
+Nos basamos en que en la medida principal de comparación (accuracy) es el que mejor valor obtiene con un 87.59%.
+
+Esto implicaría que en datos nunca antes vistos, tendría una precisión similar a la que ha conseguido con los datos de test.
+
+A pesar de que algunos modelos tienen una precisión similar aunque algo menor, sí que obtienen un menor tiempo de ejecución. 
+
+Dicho esto, si queremos obtener el mejor resultado posible a todo costo, 'ranger' es la mejor opción.
+
+# Bibliografía
+Algoritmo ranger:
+https://cran.r-project.org/web/packages/ranger/ranger.pdf
+
+Algoritmo glm:
+https://topepo.github.io/caret/train-models-by-tag.html#generalized-linear-model
+
+Algoritmo nnet:
+https://cran.r-project.org/web/packages/nnet/nnet.pdf
+
+Algoritmo svmRadial:
+https://topepo.github.io/caret/train-models-by-tag.html#Radial_Basis_Function
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
